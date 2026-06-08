@@ -26,16 +26,6 @@
       }
     },
     {
-      "step": "installLanguagePack",
-      "language": "es",
-      "setDefault": true
-    },
-    {
-      "step": "runPhpCode",
-      "comment": "Ensure that the admin account is a Moodle site administrator.",
-      "code": "define('CLI_SCRIPT', true); foreach (['/www/moodle/config.php', getcwd().'/config.php', '/var/www/html/config.php'] as $c) { if (is_file($c)) { require($c); break; } } global $CFG, $DB; $admin = $DB->get_record('user', ['username' => 'admin', 'deleted' => 0], '*', MUST_EXIST); $current = get_config(null, 'siteadmins'); $adminids = []; if ($current !== false && trim((string)$current) !== '') { foreach (explode(',', (string)$current) as $id) { $id = (int)trim($id); if ($id > 0) { $adminids[$id] = $id; } } } unset($adminids[(int)$admin->id]); $adminids = array_merge([(int)$admin->id], array_values($adminids)); $siteadmins = implode(',', $adminids); set_config('siteadmins', $siteadmins); $CFG->siteadmins = $siteadmins; purge_all_caches(); if (!is_siteadmin($admin->id)) { throw new moodle_exception('The admin user could not be registered as a site administrator.'); } mtrace('Site administrator verified: admin, user ID ' . $admin->id . '. siteadmins=' . $siteadmins);"
-    },
-    {
       "step": "installTheme",
       "pluginName": "adaptable",
       "url": "https://github.com/HenarLG/Playground_pruebas/raw/refs/heads/main/theme_adaptable.zip"
