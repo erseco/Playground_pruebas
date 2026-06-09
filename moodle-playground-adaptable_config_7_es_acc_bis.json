@@ -25,25 +25,11 @@
         "timezone": "Europe/Madrid"
       }
     },
-
-{
-  "step": "runPhpCode",
-  "comment": "Ensure that the admin account is a Moodle site administrator.",
-  "code": "define('CLI_SCRIPT', true); foreach (['/www/moodle/config.php', getcwd().'/config.php', '/var/www/html/config.php'] as $c) { if (is_file($c)) { require($c); break; } } global $CFG, $DB; $admin = $DB->get_record('user', ['username' => 'admin', 'deleted' => 0], '*', MUST_EXIST); $current = get_config(null, 'siteadmins'); $adminids = []; if ($current !== false && trim((string)$current) !== '') { foreach (explode(',', (string)$current) as $id) { $id = (int)trim($id); if ($id > 0) { $adminids[$id] = $id; } } } unset($adminids[(int)$admin->id]); $adminids = array_merge([(int)$admin->id], array_values($adminids)); $siteadmins = implode(',', $adminids); set_config('siteadmins', $siteadmins); $CFG->siteadmins = $siteadmins; purge_all_caches(); if (!is_siteadmin($admin->id)) { throw new moodle_exception('The admin user could not be registered as a site administrator.'); } mtrace('Site administrator verified: admin, user ID ' . $admin->id . '. siteadmins=' . $siteadmins);"
-},
-
-
-
-  {
-      "step": "writeFile",
-      "path": "/tmp/es.zip",
-      "data": "@spanishLangPack"
+    {
+      "step": "installLanguagePack",
+      "language": "es",
+      "setDefault": true
     },
-     {
-      "step": "runPhpCode",
-      "comment": "Install and verify the Spanish language pack from the uploaded ZIP.",
-      "code": "define('CLI_SCRIPT', true); foreach (['/www/moodle/config.php', getcwd().'/config.php', '/var/www/html/config.php'] as $c) { if (is_file($c)) { require($c); break; } } global $CFG, $DB; $zippath = '/tmp/es.zip'; if (!is_file($zippath) || filesize($zippath) < 1000) { throw new moodle_exception('Spanish language ZIP is missing or empty: ' . $zippath); } $langroot = $CFG->dataroot . '/lang'; if (!is_dir($langroot) && !mkdir($langroot, 0777, true)) { throw new moodle_exception('Cannot create Moodle language directory: ' . $langroot); } $zip = new ZipArchive(); $result = $zip->open($zippath); if ($result !== true) { throw new moodle_exception('Cannot open Spanish language ZIP. ZipArchive code: ' . $result); } $hasesroot = false; for ($i = 0; $i < $zip->numFiles; $i++) { $entry = str_replace('\\\\', '/', $zip->getNameIndex($i)); if ($entry === 'es/' || strpos($entry, 'es/') === 0) { $hasesroot = true; break; } } $destination = $hasesroot ? $langroot : $langroot . '/es'; if (!is_dir($destination) && !mkdir($destination, 0777, true)) { $zip->close(); throw new moodle_exception('Cannot create Spanish language destination: ' . $destination); } if (!$zip->extractTo($destination)) { $zip->close(); throw new moodle_exception('Could not extract Spanish language pack to: ' . $destination); } $zip->close(); $langconfig = $langroot . '/es/langconfig.php'; if (!is_file($langconfig)) { throw new moodle_exception('Spanish language pack was extracted but langconfig.php was not found at: ' . $langconfig); } set_config('lang', 'es'); set_config('country', 'ES'); set_config('timezone', 'Europe/Madrid'); $CFG->lang = 'es'; $DB->execute(\"UPDATE {user} SET lang = ? WHERE deleted = 0\", ['es']); get_string_manager()->reset_caches(); purge_all_caches(); mtrace('Spanish language pack installed and verified: ' . $langconfig);"
-    },   
     {
       "step": "installTheme",
       "pluginName": "adaptable",
@@ -53,42 +39,29 @@
       "step": "setTheme",
       "name": "adaptable"
     },
-{
-  "step": "installMoodlePlugin",
-  "pluginType": "local",
-  "pluginName": "adaptable",
-  "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/local_adaptable.zip"
-},
     {
-      "step": "mkdir",
-      "path": "/tmp/adaptable-theme"
+      "step": "installMoodlePlugin",
+      "pluginType": "local",
+      "pluginName": "adaptable",
+      "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/local_adaptable.zip"
     },
     {
       "step": "writeFile",
-      "path": "/tmp/adaptable-theme/adaptable-config.json",
+      "path": "/tmp/adaptable-config.json",
       "data": "@adaptableConfig"
     },
     {
-      "step": "writeFile",
-      "path": "/tmp/adaptable-theme/apply-adaptable-config.php",
-      "data": "@adaptableImporter"
-    },
-{
-  "step": "writeFile",
-  "path": "/tmp/adaptable-theme/Mec_Nuevo_logo.jpg",
-  "data": "@adaptableLogo"
-},
-
-    {
       "step": "runPhpCode",
-      "comment": "Import Adaptable theme configuration exported as JSON, including File API assets.",
-      "code": "define('CLI_SCRIPT', true); foreach (['/www/moodle/config.php', getcwd().'/config.php', '/var/www/html/config.php'] as $c) { if (is_file($c)) { require($c); break; } } require_once('/tmp/adaptable-theme/apply-adaptable-config.php'); theme_adaptable_playground_import('/tmp/adaptable-theme/adaptable-config.json');"
+      "comment": "Import Adaptable theme settings (scalars) from the JSON export.",
+      "code": "define('CLI_SCRIPT', true); foreach (['/www/moodle/config.php', getcwd().'/config.php', '/var/www/html/config.php'] as $c) { if (is_file($c)) { require($c); break; } } global $CFG; require_once($CFG->libdir . '/filelib.php'); $raw = file_get_contents('/tmp/adaptable-config.json'); $settings = json_decode($raw, true); if (!is_array($settings)) { throw new moodle_exception('Adaptable config JSON is not valid: ' . json_last_error_msg()); } $component = 'theme_adaptable'; $wwwroot = rtrim($CFG->wwwroot, '/'); $skip = ['moodle_version' => true, 'plugin_version' => true, 'feature_version' => true]; $n = 0; foreach ($settings as $name => $value) { if (isset($skip[$name])) { continue; } if (is_array($value)) { $value = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); } else if ($value === null) { $value = ''; } else { $value = (string)$value; } $value = preg_replace('~https?://[^\"\\'\\s<>]+/pluginfile\\.php/([0-9]+/theme_adaptable/)~i', $wwwroot . '/pluginfile.php/$1', $value); set_config($name, $value, $component); $n++; } set_config('theme', 'adaptable'); if (function_exists('theme_reset_all_caches')) { theme_reset_all_caches(); } purge_all_caches(); mtrace('Adaptable settings imported: ' . $n);"
     },
-{
-  "step": "runPhpCode",
-  "comment": "Register Adaptable logo in Moodle File API.",
-  "code": "define('CLI_SCRIPT', true); foreach (['/www/moodle/config.php', getcwd().'/config.php', '/var/www/html/config.php'] as $c) { if (is_file($c)) { require($c); break; } } global $CFG; $logo = '/tmp/adaptable-theme/Mec_Nuevo_logo.jpg'; if (!is_file($logo)) { throw new moodle_exception('Logo file not found: ' . $logo); } $context = context_system::instance(); $fs = get_file_storage(); $component = 'theme_adaptable'; $filearea = 'logo'; $filename = 'Mec_Nuevo_logo.jpg'; $fs->delete_area_files($context->id, $component, $filearea, 0); $filerecord = ['contextid' => $context->id, 'component' => $component, 'filearea' => $filearea, 'itemid' => 0, 'filepath' => '/', 'filename' => $filename]; $fs->create_file_from_pathname($filerecord, $logo); set_config('logo', '/' . $filename, 'theme_adaptable'); purge_all_caches();"
-},
+    {
+      "step": "setConfigFile",
+      "plugin": "theme_adaptable",
+      "name": "logo",
+      "filename": "Mec_Nuevo_logo.jpg",
+      "data": "@adaptableLogo"
+    },
     {
       "step": "login",
       "username": "{{ADMIN_USER}}"
@@ -99,48 +72,46 @@
       "pluginName": "exelearning",
       "url": "https://github.com/ateeducacion/mod_exelearning/archive/refs/heads/main.zip"
     },
-
-{
-  "step": "installMoodlePlugin",
-  "pluginType": "format",
-  "pluginName": "tiles",
- "url": "https://moodle.org/plugins/download.php/39555/format_tiles_moodle45_2025070355.zip"
-},
-{
-  "step": "installMoodlePlugin",
-  "pluginType": "local",
-  "pluginName": "accessibility",
- "url": "https://raw.githubusercontent.com//HenarLG/Playground_pruebas/refs/heads/main/local_accessibility.zip"
-},
-
+    {
+      "step": "installMoodlePlugin",
+      "pluginType": "format",
+      "pluginName": "tiles",
+      "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/format_tiles_moodle45_2025070355.zip"
+    },
+    {
+      "step": "installMoodlePlugin",
+      "pluginType": "local",
+      "pluginName": "accessibility",
+      "url": "https://raw.githubusercontent.com//HenarLG/Playground_pruebas/refs/heads/main/local_accessibility.zip"
+    },
     {
       "step": "setConfigs",
       "configs": [
         {
-      "name": "enroladminnewcourse",
-      "value": "0"
-	},
-	 {
-      "name": "enabledashboard",
-      "value": "1"
-    },
-    {
-      "name": "defaulthomepage",
-      "value": "0"
-    },
-    {
-      "name": "allowguestmymoodle",
-      "value": "0"
-    },
-    {
-      "name": "navshowfullcoursenames",
-      "value": "1"
-    },
-    {
-      "name": "navshowcategories",
-      "value": "1"
-    },
-	{
+          "name": "enroladminnewcourse",
+          "value": "0"
+        },
+        {
+          "name": "enabledashboard",
+          "value": "1"
+        },
+        {
+          "name": "defaulthomepage",
+          "value": "0"
+        },
+        {
+          "name": "allowguestmymoodle",
+          "value": "0"
+        },
+        {
+          "name": "navshowfullcoursenames",
+          "value": "1"
+        },
+        {
+          "name": "navshowcategories",
+          "value": "1"
+        },
+        {
           "name": "editormode",
           "value": "embedded",
           "plugin": "exelearning"
@@ -169,85 +140,30 @@
         }
       ]
     },
-
-{
-  "step": "mkdir",
-  "path": "/tmp/role-presets"
-},
-{
-  "step": "writeFile",
-  "path": "/tmp/role-presets/apply-role-presets.php",
-  "data": "@rolePresetImporter"
-},
-{
-  "step": "writeFile",
-  "path": "/tmp/role-presets/coordinacion.xml",
-  "data": "@roleCoordinacion"
-},
-{
-  "step": "writeFile",
-  "path": "/tmp/role-presets/autor.xml",
-  "data": "@roleAutor"
-},
-{
-  "step": "writeFile",
-  "path": "/tmp/role-presets/student_vercursosocultos.xml",
-  "data": "@roleStudentVerCursosOcultos"
-},
-{
-  "step": "writeFile",
-  "path": "/tmp/role-presets/tutor.xml",
-  "data": "@roleTutor"
-},
-{
-  "step": "runPhpCode",
-  "comment": "Import custom Moodle roles from XML presets.",
-  "code": "define('CLI_SCRIPT', true); foreach (['/www/moodle/config.php', getcwd().'/config.php', '/var/www/html/config.php'] as $c) { if (is_file($c)) { require($c); break; } } require_once('/tmp/role-presets/apply-role-presets.php'); playground_import_role_presets(['/tmp/role-presets/student_vercursosocultos.xml', '/tmp/role-presets/tutor.xml', '/tmp/role-presets/coordinacion.xml', '/tmp/role-presets/autor.xml']);"
-},
-
-
-{
-  "step": "mkdir",
-  "path": "/tmp/scale-import"
-},
-{
-  "step": "writeFile",
-  "path": "/tmp/scale-import/moodle-standard-scales.json",
-  "data": "@standardScales"
-},
-{
-  "step": "writeFile",
-  "path": "/tmp/scale-import/apply-scales.php",
-  "data": "@scaleImporter"
-},
-
-{
-  "step": "runPhpCode",
-  "comment": "Import Moodle standard grade scales from JSON.",
-  "code": "define('CLI_SCRIPT', true); foreach (['/www/moodle/config.php', getcwd().'/config.php', '/var/www/html/config.php'] as $c) { if (is_file($c)) { require($c); break; } } require_once('/tmp/scale-import/apply-scales.php'); playground_import_standard_scales('/tmp/scale-import/moodle-standard-scales.json');"
-},
-
-
-{
-  "step": "createCategory",
-  "name": "PRUEBAS"
-},
-{
-  "step": "writeFile",
-  "path": "/tmp/copia_curso_pensar.mbz",
-  "data": "@courseBackupPensar"
-},
-{
-  "step": "runPhpCode",
-  "comment": "Restore Curso Pensar into the existing PRUEBAS category.",
-  "code": "define('CLI_SCRIPT', true); foreach (['/www/moodle/config.php', getcwd().'/config.php', '/var/www/html/config.php'] as $c) { if (is_file($c)) { require($c); break; } } global $CFG, $DB, $USER; require_once($CFG->dirroot . '/backup/util/includes/restore_includes.php'); require_once($CFG->dirroot . '/course/lib.php'); $backupfile = '/tmp/copia_curso_pensar.mbz'; if (!is_file($backupfile) || filesize($backupfile) < 1000) { throw new moodle_exception('Course backup is missing or empty: ' . $backupfile); } $category = $DB->get_record('course_categories', ['name' => 'PRUEBAS'], '*', MUST_EXIST); $admin = get_admin(); if (!$admin) { throw new moodle_exception('Administrator account could not be found.'); } $USER = $admin; $backupdir = restore_controller::get_tempdir_name(SITEID, $admin->id); $path = make_backup_temp_directory($backupdir); $packer = get_file_packer('application/vnd.moodle.backup'); if (!$packer->extract_to_pathname($backupfile, $path)) { fulldelete($path); throw new moodle_exception('Could not extract Moodle backup: ' . $backupfile); } if (!is_file($path . '/moodle_backup.xml')) { fulldelete($path); throw new moodle_exception('The MBZ does not contain moodle_backup.xml.'); } $tmprc = new restore_controller($backupdir, SITEID, backup::INTERACTIVE_NO, backup::MODE_GENERAL, $admin->id, backup::TARGET_EXISTING_ADDING); $backuptype = $tmprc->get_type(); $tmprc->destroy(); if ($backuptype !== backup::TYPE_1COURSE) { fulldelete($path); throw new moodle_exception('The supplied MBZ is not a complete course backup.'); } list($tempfullname, $tempshortname) = restore_dbops::calculate_course_names(0, 'Curso Pensar', 'PENSAR'); $courseid = restore_dbops::create_new_course($tempfullname, $tempshortname, $category->id); $rc = new restore_controller($backupdir, $courseid, backup::INTERACTIVE_NO, backup::MODE_GENERAL, $admin->id, backup::TARGET_NEW_COURSE); try { $rc->execute_precheck(); $rc->execute_plan(); } catch (Throwable $e) { $rc->destroy(); fulldelete($path); throw new moodle_exception('Course restoration failed: ' . $e->getMessage()); } $rc->destroy(); $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST); $course->fullname = 'Curso Pensar'; $course->shortname = 'PENSAR'; $course->category = $category->id; $course->visible = 1; update_course($course); rebuild_course_cache($courseid, true); fulldelete($path); purge_all_caches(); mtrace('Course restored successfully into PRUEBAS. Course ID: ' . $courseid . ', shortname: PENSAR');"
-},
-
-
-
-
-
-
+    {
+      "step": "importRoles",
+      "roles": [
+        "@roleStudentVerCursosOcultos",
+        "@roleTutor",
+        "@roleCoordinacion",
+        "@roleAutor"
+      ]
+    },
+    {
+      "step": "createScales",
+      "scales": "@standardScales"
+    },
+    {
+      "step": "createCategory",
+      "name": "PRUEBAS"
+    },
+    {
+      "step": "restoreCourse",
+      "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/copia_curso_pensar.mbz",
+      "category": "PRUEBAS",
+      "fullname": "Curso Pensar",
+      "shortname": "PENSAR"
+    },
     {
       "step": "createCourse",
       "fullname": "Curso de Prueba · ejemplo de uso",
@@ -255,7 +171,7 @@
       "category": "PRUEBAS",
       "summary": "Curso demo con una actividad mod_exelearning y un alumno matriculado."
     },
-  {
+    {
       "step": "runPhpCode",
       "comment": "Set curso de Pruebas con formato Tiles.",
       "code": "define('CLI_SCRIPT', true); foreach (['/www/moodle/config.php', getcwd().'/config.php', '/var/www/html/config.php'] as $c) { if (is_file($c)) { require($c); break; } } global $DB, $CFG; require_once($CFG->dirroot . '/course/lib.php'); $course = $DB->get_record('course', ['shortname' => 'Pruebas'], '*', MUST_EXIST); $course->format = 'tiles'; update_course($course); rebuild_course_cache($course->id, true); purge_all_caches();"
@@ -288,7 +204,7 @@
       "course": "PENSAR",
       "role": "editingteacher"
     },
-{
+    {
       "step": "enrolUser",
       "username": "{{TEACHER_USER}}",
       "course": "Pruebas",
@@ -300,7 +216,7 @@
       "course": "Pruebas",
       "role": "student"
     },
-{
+    {
       "step": "enrolUser",
       "username": "alumno1",
       "course": "PENSAR",
@@ -390,15 +306,11 @@
         }
       ]
     },
-
-{
-  "step": "runPhpCode",
-  "comment": "Configure the Moodle site front page with search, course list and enrolled courses.",
-  "code": "define('CLI_SCRIPT', true); $configfile = null; foreach (['/www/moodle/config.php', getcwd().'/config.php', '/var/www/html/config.php'] as $candidate) { if (is_file($candidate)) { $configfile = $candidate; require($candidate); break; } } global $CFG, $DB, $SITE, $COURSE; require_once($CFG->dirroot . '/course/lib.php'); if (!$configfile) { throw new moodle_exception('Moodle config.php could not be located.'); } $source = file_get_contents($configfile); if ($source === false) { throw new moodle_exception('Moodle config.php could not be read: ' . $configfile); } $patterns = ['/^\\s*\\$CFG->frontpage\\s*=\\s*.*?;\\s*$/m', '/^\\s*\\$CFG->frontpageloggedin\\s*=\\s*.*?;\\s*$/m']; $clean = preg_replace($patterns, '', $source); if ($clean === null) { throw new moodle_exception('Could not process frontpage overrides in config.php.'); } if ($clean !== $source) { if (!is_writable($configfile)) { throw new moodle_exception('config.php contains frontpage overrides but is not writable: ' . $configfile); } if (file_put_contents($configfile, $clean) === false) { throw new moodle_exception('Could not remove frontpage overrides from config.php.'); } } unset($CFG->frontpage, $CFG->frontpageloggedin); if (isset($CFG->config_php_settings) && is_array($CFG->config_php_settings)) { unset($CFG->config_php_settings['frontpage'], $CFG->config_php_settings['frontpageloggedin']); } $site = $DB->get_record('course', ['id' => SITEID], '*', MUST_EXIST); $site->fullname = 'Playground Aula Virtual'; $site->shortname = 'Playground_AV'; $site->summary = '<p>Entorno Moodle de pruebas con cursos y configuración personalizada.</p>'; $site->summaryformat = FORMAT_HTML; $site->timemodified = time(); $DB->update_record('course', $site); set_config('frontpage', FRONTPAGECOURSESEARCH . ',' . FRONTPAGEALLCOURSELIST); set_config('frontpageloggedin', FRONTPAGEENROLLEDCOURSELIST . ',' . FRONTPAGECOURSESEARCH . ',' . FRONTPAGEALLCOURSELIST); $SITE = $DB->get_record('course', ['id' => SITEID], '*', MUST_EXIST); if (isset($COURSE) && (int)$COURSE->id === SITEID) { $COURSE = $SITE; } core_courseformat\\base::reset_course_cache(SITEID); purge_all_caches(); mtrace('Site front page configured successfully.');"
-},
-
-
-
+    {
+      "step": "runPhpCode",
+      "comment": "Configure the Moodle site front page with search, course list and enrolled courses.",
+      "code": "define('CLI_SCRIPT', true); $configfile = null; foreach (['/www/moodle/config.php', getcwd().'/config.php', '/var/www/html/config.php'] as $candidate) { if (is_file($candidate)) { $configfile = $candidate; require($candidate); break; } } global $CFG, $DB, $SITE, $COURSE; require_once($CFG->dirroot . '/course/lib.php'); if (!$configfile) { throw new moodle_exception('Moodle config.php could not be located.'); } $source = file_get_contents($configfile); if ($source === false) { throw new moodle_exception('Moodle config.php could not be read: ' . $configfile); } $patterns = ['/^\\s*\\$CFG->frontpage\\s*=\\s*.*?;\\s*$/m', '/^\\s*\\$CFG->frontpageloggedin\\s*=\\s*.*?;\\s*$/m']; $clean = preg_replace($patterns, '', $source); if ($clean === null) { throw new moodle_exception('Could not process frontpage overrides in config.php.'); } if ($clean !== $source) { if (!is_writable($configfile)) { throw new moodle_exception('config.php contains frontpage overrides but is not writable: ' . $configfile); } if (file_put_contents($configfile, $clean) === false) { throw new moodle_exception('Could not remove frontpage overrides from config.php.'); } } unset($CFG->frontpage, $CFG->frontpageloggedin); if (isset($CFG->config_php_settings) && is_array($CFG->config_php_settings)) { unset($CFG->config_php_settings['frontpage'], $CFG->config_php_settings['frontpageloggedin']); } $site = $DB->get_record('course', ['id' => SITEID], '*', MUST_EXIST); $site->fullname = 'Playground Aula Virtual'; $site->shortname = 'Playground_AV'; $site->summary = '<p>Entorno Moodle de pruebas con cursos y configuración personalizada.</p>'; $site->summaryformat = FORMAT_HTML; $site->timemodified = time(); $DB->update_record('course', $site); set_config('frontpage', FRONTPAGECOURSESEARCH . ',' . FRONTPAGEALLCOURSELIST); set_config('frontpageloggedin', FRONTPAGEENROLLEDCOURSELIST . ',' . FRONTPAGECOURSESEARCH . ',' . FRONTPAGEALLCOURSELIST); $SITE = $DB->get_record('course', ['id' => SITEID], '*', MUST_EXIST); if (isset($COURSE) && (int)$COURSE->id === SITEID) { $COURSE = $SITE; } core_courseformat\\base::reset_course_cache(SITEID); purge_all_caches(); mtrace('Site front page configured successfully.');"
+    },
     {
       "step": "setLandingPage",
       "path": "/"
@@ -407,40 +319,24 @@
   "resources": {
     "adaptableConfig": {
       "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/adaptable-config.json"
-
     },
-    "adaptableImporter": {
-      "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/apply-adaptable-config.php"
+    "adaptableLogo": {
+      "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/Mec_Nuevo_logo.jpg"
     },
-"adaptableLogo": {
-    "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/Mec_Nuevo_logo.jpg"
-  },
-    "spanishLangPack": {
-      "url": "https://packaging.moodle.org/langpack/4.5/es.zip"
+    "roleCoordinacion": {
+      "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/coordinacion.xml"
     },
-    "courseBackupPensar": {
-  "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/copia_curso_pensar.mbz"
-	},
-	"rolePresetImporter": {
-  "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/apply-role-presets.php"
-	},
-	"roleCoordinacion": {
-  "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/coordinacion.xml"
-	},
-	"roleAutor": {
-  "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/autor.xml"
-	},
-	"roleStudentVerCursosOcultos": {
-  "url": 	"https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/student_vercursosocultos.xml"
-	},
-	"roleTutor": {
- 	 "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/tutor.xml"
-	},
-	"standardScales": {
-  "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/moodle-standard-scales.json"
-	},
-	"scaleImporter": {
-  	"url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/apply-scales.php"
-	}
+    "roleAutor": {
+      "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/autor.xml"
+    },
+    "roleStudentVerCursosOcultos": {
+      "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/student_vercursosocultos.xml"
+    },
+    "roleTutor": {
+      "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/tutor.xml"
+    },
+    "standardScales": {
+      "url": "https://raw.githubusercontent.com/HenarLG/Playground_pruebas/refs/heads/main/moodle-standard-scales.json"
+    }
   }
 }
