@@ -26,6 +26,11 @@
       }
     },
     {
+      "step": "installLanguagePack",
+      "language": "es",
+      "setDefault": true
+    },
+    {
       "step": "installTheme",
       "pluginName": "adaptable",
       "url": "https://github.com/HenarLG/Playground_pruebas/raw/refs/heads/main/theme_adaptable.zip"
